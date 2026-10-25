@@ -1,0 +1,13 @@
+# Credenciales
+.env
+.env.*
+!.env.example
+
+# Certificados locales
+backend/certs/
+
+# Dependencias
+node_modules/
+
+# Archivos generados
+dist/
