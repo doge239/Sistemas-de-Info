@@ -49,7 +49,9 @@ SELECT g,CASE WHEN g<=4 THEN 'PENDIENTE' WHEN g<=7 THEN 'APROBADA' WHEN g<=9 THE
 FROM generate_series(1,10) g;
 INSERT INTO detalle_reposicion(solicitud_id,producto_id,cantidad)
 SELECT s.id,(SELECT p.id FROM producto p WHERE p.proveedor_id=s.proveedor_id ORDER BY p.id LIMIT 1),10
-FROM solicitud_reposicion s WHERE s.id BETWEEN 1 AND 10;
+FROM solicitud_reposicion s
+WHERE s.id BETWEEN 1 AND 10
+ON CONFLICT (solicitud_id, producto_id) DO NOTHING;
 
 -- 120 ventas + detalles + movimientos ficticios. La tabla venta cumple el mínimo de 100 registros.
 INSERT INTO venta(referencia,usuario_id,canal,estado,total,creado_en)
