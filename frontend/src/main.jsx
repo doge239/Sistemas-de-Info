@@ -1,4 +1,4 @@
-import React, {useState,useEffect,useCallback} from 'react';
+import React, {useState,useEffect,useCallback,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {LayoutDashboard,ShoppingCart,ShoppingBag,Package,Truck,Users,LogOut,Search,Bell,Store,ShieldCheck,ChevronRight,RefreshCw,Plus,CheckCircle2,AlertTriangle,Box,ClipboardList,BarChart3,X} from 'lucide-react';
 import './style.css';
@@ -6,11 +6,10 @@ import './style.css';
 const roleName={ADMINISTRADOR:'Administrador',VENDEDOR:'Vendedor',BODEGA:'Bodega',JEFATURA:'Jefatura',CLIENTE:'Cliente'};
 const money=n=>'$ '+Number(n||0).toLocaleString('es-CL');
 const errMsg=e=>e?.message||'No fue posible completar la operación';
-function initialPage(rol){return ({ADMINISTRADOR:'inicio',JEFATURA:'inicio',BODEGA:'inventario',VENDEDOR:'venta',CLIENTE:'catalogo'})[rol]||'catalogo';}
 function api(path,opts={}){
  const token=localStorage.getItem('pcf_token');
  return fetch('/api'+path,{...opts,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...opts.headers}})
- .then(async r=>{let data;try{data=await r.json();}catch{throw new Error('No se pudo leer la respuesta del servidor');}if(!r.ok)throw new Error(data.error||`Error ${r.status}`);return data;});
+ .then(async r=>{let data;try{data=await r.json();}catch{throw new Error('No se pudo leer la respuesta del servidor');}if(!r.ok){const error=new Error(data.error||`Error ${r.status}`);error.status=r.status;throw error;}return data;});
 }
 const post=(path,data)=>api(path,{method:'POST',body:JSON.stringify(data)});
 const patch=(path,data)=>api(path,{method:'PATCH',body:JSON.stringify(data)});
@@ -28,7 +27,7 @@ function Badge({value}){let cl=/sin stock|rechaz|cancelad/i.test(value)?'red':/b
 function Stat({label,value,icon:Icon,sub}){return <div className="stat"><div className="stat-icon"><Icon size={23}/></div><div><p>{label}</p><strong>{value}</strong><small>{sub}</small></div></div>;}
 function Card({children,title,action}){return <section className="card"><div className="card-heading"><h3>{title}</h3>{action}</div>{children}</section>;}
 function Login({onLogin}){
- const [email,setEmail]=useState('admin@demo.test');const [clave,setClave]=useState('Demo2026!');const [error,setError]=useState('');const [loading,setLoading]=useState(false);
+ const [email,setEmail]=useState('cliente@demo.test');const [clave,setClave]=useState('Demo2026!');const [error,setError]=useState('');const [loading,setLoading]=useState(false);
  async function submit(e){e.preventDefault();setLoading(true);setError('');try{const r=await post('/auth/login',{email,clave});localStorage.setItem('pcf_token',r.token);onLogin(r.usuario);}catch(ex){setError(errMsg(ex));}finally{setLoading(false);}}
  return <div className="login-bg"><div className="login-brand"><span className="mark">P₂</span> Factory</div><form onSubmit={submit} className="login-card"><div className="login-icon"><ShieldCheck size={28}/></div><h1>Bienvenido al sistema</h1><p>Inicia sesión para gestionar ventas, pedidos e inventario de PC Factory Antofagasta.</p><label>Correo electrónico<input value={email} type="email" onChange={e=>setEmail(e.target.value)} required/></label><label>Contraseña<input value={clave} type="password" onChange={e=>setClave(e.target.value)} required/></label><BoxMessage type="error" text={error}/><button className="btn" disabled={loading}>{loading?'Ingresando...':'Iniciar sesión'} <ChevronRight size={17}/></button><div className="demo"><b>Cuentas para la demostración</b><p>Selecciona un perfil y utiliza la contraseña temporal <code>Demo2026!</code>.</p><select value={email} onChange={e=>setEmail(e.target.value)}>{['admin','vendedor','bodega','jefatura','cliente'].map(v=><option key={v} value={v+'@demo.test'}>{v[0].toUpperCase()+v.slice(1)}</option>)}</select></div></form><p className="login-footer">Prototipo académico · Datos ficticios · Universidad Católica del Norte</p></div>;
 }
@@ -44,15 +43,24 @@ function Dashboard(){
  <div className="two-col"><Card title="Ventas recientes por canal"><p className="muted">Cifras demostrativas en pesos chilenos</p><div className="chart-legend"><span>● Presencial</span><span>● Online</span></div><div className="mini-chart">{weekly.map(w=><div className="chart-col" key={w.fecha}><div className="bars"><i title={money(w.presencial)} style={{height:(Math.max(4,w.presencial/maximum*100))+'%'}}/><i className="gray" title={money(w.online)} style={{height:(Math.max(4,w.online/maximum*100))+'%'}}/></div><small>{w.fecha.slice(5)}</small></div>)}</div></Card><Card title="Estado del inventario"><div className="big-number">{availability}% <span>disponibilidad</span></div><div className="progress"><div style={{width:availability+'%'}}/></div><div className="status-line"><Badge value="Disponible"/><b>{d.stock.disponibles}</b></div><div className="status-line"><Badge value="Bajo stock"/><b>{d.stock.bajo_minimo}</b></div><div className="status-line"><Badge value="Sin stock"/><b>{d.stock.agotados}</b></div></Card></div><p className="footnote">Valores de ejemplo: se actualizarán con las operaciones registradas en PostgreSQL. Para el informe analítico final deben utilizarse las vistas Power BI.</p></>;
 }
 function ProductCard({p,onAdd}){return <div className="product-card"><div className="product-visual"><span>{p.categoria}</span><Package size={49}/></div><div className="p-card-title">{p.nombre}</div><small>{p.sku} · {p.categoria}</small><strong>{money(p.precio)}</strong><div><Badge value={p.estado}/> <small>{p.disponible} disponibles</small></div><button className="btn full" onClick={()=>onAdd(p)} disabled={p.disponible<=0}><Plus size={16}/> Agregar</button></div>;}
-function Commerce({online}){
- const [products,setProducts]=useState([]),[search,setSearch]=useState(''),[cart,setCart]=useState([]),[payment,setPayment]=useState('EFECTIVO');const [message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+function Commerce({online,user,onLogin,onSessionExpired,onlineCart,setOnlineCart}){
+ const [products,setProducts]=useState([]),[search,setSearch]=useState(''),[localCart,setLocalCart]=useState([]),[payment,setPayment]=useState('EFECTIVO');const [message,setMessage]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const cart=online?onlineCart:localCart,setCart=online?setOnlineCart:setLocalCart;
  const load=useCallback(()=>api('/productos').then(setProducts).catch(e=>setError(errMsg(e))),[]);
  useEffect(()=>{load();},[load]);
  function add(p){setCart(items=>{const old=items.find(x=>x.id===p.id);if(old){return items.map(x=>x.id===p.id?{...x,qty:Math.min(x.disponible,x.qty+1)}:x);}return [...items,{...p,qty:1}];});}
  function change(id,d){setCart(prev=>prev.map(x=>x.id===id?{...x,qty:Math.max(0,Math.min(x.disponible,x.qty+d))}:x).filter(x=>x.qty>0));}
  const total=cart.reduce((s,i)=>s+i.qty*i.precio,0);
- async function checkout(){setBusy(true);setError('');setMessage('');try{const data={items:cart.map(x=>({producto_id:x.id,cantidad:x.qty})),...(online?{}:{metodo_pago:payment})};const r=await post(online?'/pedidos/online':'/ventas/presencial',data);setCart([]);setMessage((online?'Pedido reservado':'Venta confirmada')+` #${r.id} · ${money(r.total)}`);await load();}catch(e){setError(errMsg(e));}finally{setBusy(false);}}
- return <><div className="page-title"><h1>{online?'Compra online':'Venta presencial'}</h1><p>{online?'Selecciona productos y confirma retiro en PC Factory Antofagasta':'Registra una venta en sucursal; el descuento de stock es automático'}</p></div><BoxMessage text={message}/><BoxMessage type="error" text={error}/><div className="commerce-grid"><div><div className="searchbar"><Search size={19}/><input placeholder="Buscar productos por nombre o SKU..." value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="products-grid">{products.filter(p=>(p.nombre+' '+p.sku).toLowerCase().includes(search.toLowerCase())).map(p=><ProductCard key={p.id} p={p} onAdd={add}/>)}</div></div><section className="card sticky-cart"><h3>{online?'Mi carrito online':'Carrito de venta'} <span className="count">{cart.length}</span></h3>{cart.length===0?<p className="muted">Agrega productos para comenzar.</p>:cart.map(x=><div className="cart-row" key={x.id}><div><b>{x.nombre}</b><small>{money(x.precio)}</small></div><div className="qty"><button onClick={()=>change(x.id,-1)}>−</button><b>{x.qty}</b><button onClick={()=>change(x.id,1)}>+</button></div></div>)}<div className="total"><span>Total</span><b>{money(total)}</b></div>{online?<p className="note-green"><Store size={16}/> Pedido para retiro en PC Factory Antofagasta, sin pago integrado.</p>:<label>Método de pago<select value={payment} onChange={e=>setPayment(e.target.value)}>{['EFECTIVO','TARJETA','TRANSFERENCIA','OTRO'].map(x=><option key={x}>{x}</option>)}</select></label>}<button className="btn full" disabled={!cart.length||busy} onClick={checkout}>{busy?'Procesando...':online?'Confirmar pedido para retiro':'Confirmar venta'} <ChevronRight size={16}/></button></section></div></>;
+ async function checkout(){
+  setError('');setMessage('');
+  if(online&&!user){onLogin();return;}
+  if(online&&!['CLIENTE','ADMINISTRADOR'].includes(user.rol)){setError('Para reservar online utiliza una cuenta de Cliente o Administrador.');return;}
+  setBusy(true);
+  try{const data={items:cart.map(x=>({producto_id:x.id,cantidad:x.qty})),...(online?{}:{metodo_pago:payment})};const r=await post(online?'/pedidos/online':'/ventas/presencial',data);setCart([]);setMessage((online?'Pedido reservado':'Venta confirmada')+` #${r.id} · ${money(r.total)}`);await load();}
+  catch(e){setError(errMsg(e));if(e.status===401)onSessionExpired();}
+  finally{setBusy(false);}
+ }
+ return <><div className="page-title"><h1>{online?'Compra online':'Venta presencial'}</h1><p>{online?'Selecciona productos y confirma retiro en PC Factory Antofagasta':'Registra una venta en sucursal; el descuento de stock es automático'}</p></div><BoxMessage text={message}/><BoxMessage type="error" text={error}/><div className="commerce-grid"><div><div className="searchbar"><Search size={19}/><input placeholder="Buscar productos por nombre o SKU..." value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="products-grid">{products.filter(p=>(p.nombre+' '+p.sku).toLowerCase().includes(search.toLowerCase())).map(p=><ProductCard key={p.id} p={p} onAdd={add}/>)}</div></div><section className="card sticky-cart"><h3>{online?'Mi carrito online':'Carrito de venta'} <span className="count">{cart.length}</span></h3>{cart.length===0?<p className="muted">Agrega productos para comenzar.</p>:cart.map(x=><div className="cart-row" key={x.id}><div><b>{x.nombre}</b><small>{money(x.precio)}</small></div><div className="qty"><button onClick={()=>change(x.id,-1)}>−</button><b>{x.qty}</b><button onClick={()=>change(x.id,1)}>+</button></div></div>)}<div className="total"><span>Total</span><b>{money(total)}</b></div>{online?<p className="note-green"><Store size={16}/> Pedido para retiro en PC Factory Antofagasta, sin pago integrado.</p>:<label>Método de pago<select value={payment} onChange={e=>setPayment(e.target.value)}>{['EFECTIVO','TARJETA','TRANSFERENCIA','OTRO'].map(x=><option key={x}>{x}</option>)}</select></label>}<button className="btn full" disabled={!cart.length||busy} onClick={checkout}>{busy?'Procesando...':online?(user?'Confirmar pedido para retiro':'Iniciar sesi\u00f3n para reservar'):'Confirmar venta'} <ChevronRight size={16}/></button></section></div></>;
 }
 function Orders({rol}){
  const isClient=rol==='CLIENTE';const [orders,setOrders]=useState([]),[message,setMessage]=useState(''),[error,setError]=useState('');
@@ -84,16 +92,36 @@ function UsersPage(){
  async function save(e){e.preventDefault();setError('');try{await post('/usuarios',form);setMessage('Usuario creado correctamente');setForm({nombre:'',email:'',clave:'',rol:'VENDEDOR'});load();}catch(ex){setError(errMsg(ex));}}
  return <><div className="page-title"><h1>Gestión de usuarios</h1><p>Accesos y privilegios según perfil</p></div><BoxMessage text={message}/><BoxMessage type="error" text={error}/><div className="two-col"><Card title="Usuarios registrados"><div className="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.nombre}</td><td>{u.email}</td><td><Badge value={u.rol}/></td><td><Badge value={u.activo?'Activo':'Inactivo'}/></td></tr>)}</tbody></table></div></Card><Card title="Crear usuario"><form className="form-grid" onSubmit={save}>{['nombre','email','clave'].map(k=><label key={k}>{({nombre:'Nombre completo',email:'Correo',clave:'Contraseña'})[k]}<input type={k==='clave'?'password':k==='email'?'email':'text'} minLength={k==='clave'?8:undefined} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})} required/></label>)}<label>Rol<select value={form.rol} onChange={e=>setForm({...form,rol:e.target.value})}>{Object.keys(roleName).map(x=><option key={x} value={x}>{roleName[x]}</option>)}</select></label><button className="btn">Crear usuario</button></form></Card></div></>;
 }
+function LoginDialog({onLogin,onClose}){
+ const ref=useRef(null);
+ useEffect(()=>{const dialog=ref.current;dialog.showModal();return()=>dialog.close();},[]);
+ return <dialog ref={ref} className="login-dialog" aria-label="Iniciar sesión" onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget)onClose();}}><div className="login-dialog-content"><button className="login-close" onClick={onClose} aria-label="Cerrar inicio de sesión"><X size={22}/></button><Login onLogin={onLogin}/><button className="continue-shopping" onClick={onClose}>Continuar sin iniciar sesión</button></div></dialog>;
+}
 function App(){
- const [user,setUser]=useState(()=>{try{return JSON.parse(localStorage.getItem('pcf_user')||'null');}catch{return null;}});
- const [page,setPage]=useState(user?initialPage(user.rol):'login');
- function login(u){localStorage.setItem('pcf_user',JSON.stringify(u));setUser(u);setPage(initialPage(u.rol));}
- function logout(){localStorage.removeItem('pcf_user');localStorage.removeItem('pcf_token');setUser(null);setPage('login');}
- if(!user)return <Login onLogin={login}/>;
- const allowed=nav.filter(n=>n.roles.includes(user.rol));
- return <div className="shell"><aside className="sidebar"><div className="brand"><span className="mark">P₂</span> Factory</div><div className="nav-caption">MENÚ PRINCIPAL</div><nav>{allowed.map(n=><button className={'nav-link '+(page===n.key?'active':'')} onClick={()=>setPage(n.key)} key={n.key}><n.icon size={19}/>{n.label}</button>)}</nav><div className="side-footer"><div className="side-location"><Store size={17}/> Sucursal Antofagasta</div><button onClick={logout}><LogOut size={17}/> Cerrar sesión</button></div></aside><div className="content"><header className="topbar"><div className="header-search"><Search size={18}/> Sistema de información · PC Factory</div><div className="right-head"><span className="branch"><Store size={17}/> Antofagasta</span><Bell size={19}/><div className="avatar">{user.nombre.slice(0,1)}</div><div><b>{user.nombre}</b><small>{roleName[user.rol]}</small></div></div></header><main key={page}>
- {page==='inicio'&&<Dashboard/>}{page==='catalogo'&&<Commerce online/>}{page==='venta'&&<Commerce online={false}/>}{page==='pedidos'&&<Orders rol={user.rol}/>}{page==='inventario'&&<Inventory/>}{page==='reposiciones'&&<Restock rol={user.rol}/>}{page==='usuarios'&&<UsersPage/>}
- </main></div></div>;
+ const [user,setUser]=useState(null),[page,setPage]=useState('catalogo');
+ const [showLogin,setShowLogin]=useState(false),[onlineCart,setOnlineCart]=useState([]);
+ const [checking,setChecking]=useState(()=>Boolean(localStorage.getItem('pcf_token')));
+ const [sessionError,setSessionError]=useState('');
+ function clearSession(){localStorage.removeItem('pcf_user');localStorage.removeItem('pcf_token');setUser(null);setPage('catalogo');}
+ useEffect(()=>{
+  if(!localStorage.getItem('pcf_token')){localStorage.removeItem('pcf_user');return;}
+  let cancelled=false;
+  api('/auth/me').then(u=>{if(!cancelled){localStorage.setItem('pcf_user',JSON.stringify(u));setUser(u);}}).catch(e=>{if(!cancelled){if(e.status===401)clearSession();else setSessionError('No se pudo verificar tu cuenta. Puedes seguir explorando o intentar iniciar sesión.');}}).finally(()=>{if(!cancelled)setChecking(false);});
+  return()=>{cancelled=true;};
+ },[]);
+ function login(u){localStorage.setItem('pcf_user',JSON.stringify(u));setUser(u);setShowLogin(false);setSessionError('');}
+ function logout(){clearSession();setSessionError('');}
+ function sessionExpired(){clearSession();setShowLogin(true);}
+ const allowed=nav.filter(n=>n.key==='catalogo'||user&&n.roles.includes(user.rol));
+ const commerceProps={user,onLogin:()=>setShowLogin(true),onSessionExpired:sessionExpired,onlineCart,setOnlineCart};
+ return <><div className="shell"><aside className="sidebar"><div className="brand"><span className="mark">P₂</span> Factory</div><div className="nav-caption">MENÚ PRINCIPAL</div><nav>{allowed.map(n=><button title={n.label} aria-label={n.label} className={'nav-link '+(page===n.key?'active':'')} onClick={()=>setPage(n.key)} key={n.key}><n.icon size={19}/>{n.label}</button>)}</nav><div className="side-footer"><div className="side-location"><Store size={17}/> Sucursal Antofagasta</div>{user?<button onClick={logout}><LogOut size={17}/> Cerrar sesión</button>:<button onClick={()=>setShowLogin(true)}><ShieldCheck size={17}/> Iniciar sesión</button>}</div></aside><div className="content"><header className="topbar"><div className="header-search"><Search size={18}/> PC Factory · Tienda online</div><div className="right-head"><span className="branch"><Store size={17}/> Antofagasta</span>{user?<><div className="avatar">{user.nombre.slice(0,1)}</div><div><b>{user.nombre}</b><small>{roleName[user.rol]}</small></div><button className="account-button" onClick={logout}>Cerrar sesión</button></>:<button className="btn" disabled={checking} onClick={()=>setShowLogin(true)}><ShieldCheck size={17}/>{checking?'Verificando cuenta...':'Iniciar sesión'}</button>}</div></header><main>
+ <BoxMessage text={sessionError} type="error"/>
+ {page==='catalogo'&&<p className="guest-note">Explora y agrega productos a tu carrito libremente. Inicia sesión al confirmar tu pedido para retiro.</p>}
+ <div hidden={page!=='catalogo'}><Commerce online {...commerceProps}/></div>
+ {user&&<React.Fragment key={user.id}>
+ {page==='inicio'&&<Dashboard/>}{page==='venta'&&<Commerce online={false} {...commerceProps}/>}{page==='pedidos'&&<Orders rol={user.rol}/>}{page==='inventario'&&<Inventory/>}{page==='reposiciones'&&<Restock rol={user.rol}/>}{page==='usuarios'&&<UsersPage/>}
+ </React.Fragment>}
+ </main></div></div>{showLogin&&<LoginDialog onLogin={login} onClose={()=>setShowLogin(false)}/>}</>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);
