@@ -20,7 +20,7 @@ test('catálogo público, login opcional, carrito y permisos de navegación',{sk
   const url=new URL(req.url,'http://localhost');
   if(url.pathname.startsWith('/api/')){
    let data=[],status=200;
-   if(url.pathname==='/api/productos')data=[{id:1,sku:'TEST001',nombre:'Notebook de prueba',categoria:'Notebooks',precio:1000,disponible:10,estado:'En stock'}];
+   if(url.pathname==='/api/productos')data=Array.from({length:20},(_,i)=>({id:String(i+1),sku:'TEST'+i,nombre:i===0?'Notebook de prueba':'Producto adicional '+i,categoria:'Notebooks',precio:1000,disponible:10,estado:'En stock'}));
    else if(url.pathname==='/api/auth/login'){if(failLogin){status=401;data={error:'Credenciales incorrectas'};}else data={token:'valid',usuario:user()};}
    else if(url.pathname==='/api/auth/me'){if(req.headers.authorization!=='Bearer valid'){status=401;data={error:'Sesión vencida'};}else data=user();}
    else if(url.pathname==='/api/pedidos/online'){if(expireOrder){status=401;data={error:'Sesión vencida'};}else{orders++;data={id:123,total:1000};status=201;}}
@@ -51,12 +51,22 @@ test('catálogo público, login opcional, carrito y permisos de navegación',{sk
  const click=async selector=>{assert.ok(await evaluate(`Boolean(document.querySelector(${JSON.stringify(selector)}))`),`Falta ${selector}`);await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);};
  const text=()=>evaluate('document.body.innerText');
  const open=()=>send('Page.navigate',{url:`http://127.0.0.1:${server.address().port}/`});
- await send('Runtime.enable');await open();
+ await send('Runtime.enable');
+ await send('Emulation.setDeviceMetricsOverride',{width:1100,height:750,deviceScaleFactor:1,mobile:false});
+ await open();
  await until(async()=>(await text()).includes('Notebook de prueba'));
  assert.equal(await evaluate("Boolean(document.querySelector('dialog[open]'))"),false);
  assert.equal(await evaluate("Boolean(document.querySelector('[aria-label=\"Usuarios y roles\"]'))"),false);
  await click('.product-card .btn');
  assert.equal(await evaluate("document.querySelector('.cart-row .qty b').textContent"),'1');
+ assert.match(await evaluate("document.querySelector('.product-card .btn').textContent"),/1 en carrito/);
+ assert.ok(await evaluate("document.querySelector('.sticky-cart').getBoundingClientRect().top>innerHeight"),'Con 20 productos el carrito queda debajo del catálogo');
+ assert.ok(await evaluate("document.querySelector('.cart-shortcut').getBoundingClientRect().bottom<innerHeight"),'El resumen debe estar visible al agregar');
+ await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+ await click('.cart-shortcut .btn');
+ await until(()=>evaluate("document.querySelector('.sticky-cart').getBoundingClientRect().top<innerHeight && document.querySelector('.sticky-cart').getBoundingClientRect().bottom>0"));
+ assert.ok(await evaluate("document.documentElement.scrollWidth<=innerWidth"),'Sin desplazamiento horizontal en móvil');
+ await send('Emulation.setDeviceMetricsOverride',{width:1100,height:750,deviceScaleFactor:1,mobile:false});
  await click('.sticky-cart .btn');
  await until(()=>evaluate("Boolean(document.querySelector('dialog[open]'))"));
  assert.equal(orders,0,'El invitado no debe enviar pedidos');
@@ -82,6 +92,11 @@ test('catálogo público, login opcional, carrito y permisos de navegación',{sk
  assert.equal(orders,0);expireOrder=false;
  await evaluate("document.querySelector('.login-card').requestSubmit()");
  await until(()=>evaluate("!document.querySelector('dialog')"));
+ await click('.sticky-cart .btn');
+ await until(async()=>(await text()).includes('Pedido reservado'));
+ assert.equal(orders,1,'El perfil CLIENTE puede confirmar su compra');
+ assert.equal(await evaluate("document.querySelectorAll('.cart-row').length"),0);
+ await click('.product-card .btn');
  await click('.topbar .account-button');
  await until(()=>evaluate("Boolean(document.querySelector('.topbar .btn'))"));
  assert.equal(await evaluate("document.querySelector('.cart-row .qty b').textContent"),'1');
@@ -89,7 +104,7 @@ test('catálogo público, login opcional, carrito y permisos de navegación',{sk
  await until(()=>evaluate("Boolean(document.querySelector('[aria-label=\"Usuarios y roles\"]'))"));
  await click('.sticky-cart .btn');
  await until(async()=>(await text()).includes('Pedido reservado'));
- assert.equal(orders,1);assert.equal(await evaluate("document.querySelectorAll('.cart-row').length"),0);
+ assert.equal(orders,2);assert.equal(await evaluate("document.querySelectorAll('.cart-row').length"),0);
  await evaluate("localStorage.setItem('pcf_token','expired')");await open();
  await until(()=>evaluate("Boolean(document.querySelector('.topbar .btn:not(:disabled)'))"));
  assert.equal(await evaluate("Boolean(document.querySelector('dialog[open]'))"),false);
