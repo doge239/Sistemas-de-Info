@@ -1,42 +1,73 @@
-# PC Factory · Entregable 3 · versión Supabase
+# PC Factory
 
-**Prototipo académico**, no oficial de PC Factory, con datos ficticios. No sustituye sistemas productivos.
+Tienda y sistema de gestión para la sucursal de Antofagasta. Prototipo académico con datos ficticios.
 
-## Arquitectura
+Aplicación publicada: https://sistemas-de-info-production.up.railway.app
 
-- **Frontend:** React + Vite, vistas para Cliente, Vendedor, Bodega, Jefatura y Administrador.
-- **Backend:** Node.js + Express, JWT propio, control de roles, validaciones y transacciones atómicas.
-- **Base de datos:** PostgreSQL administrado en **Supabase**; NO se conecta React directamente a PostgreSQL.
-- **Análisis:** Power BI, vistas `vw_stock`, `vw_ventas_powerbi`, `vw_reposiciones_powerbi`.
+## Estructura
 
-## Comenzar en Windows
+- `frontend/`: React, Vite, estilos e imágenes WebP.
+- `backend/`: API Express, autenticación, permisos, ventas e inventario.
+- `database/`: esquema, datos iniciales y migraciones de Supabase.
+- `Dockerfile`, `railway.json`: configuración de producción.
+- [DEPLOY_RAILWAY.md](DEPLOY_RAILWAY.md): variables y comandos para actualizar Railway.
 
-Lee **`INICIO_RAPIDO_WINDOWS.txt`**. Ahí se explican los pasos del dashboard Supabase, SQL Editor, cómo obtener la `DATABASE_URL` del **Session pooler** y cómo iniciar backend/frontend.
+## Ejecutar localmente
 
-La base predeterminada de Supabase se llama `postgres`, no `pcfactory_si`. Se crean nuestras 11 tablas en el esquema `public`.
+Requiere Node.js y una base PostgreSQL en Supabase.
 
-**Orden de SQL en un proyecto nuevo:** `database/01_schema.sql` → `database/02_demo.sql` (solo una vez) → `database/03_validaciones.sql`. El archivo `04_comprobar_seguridad.sql` revisa RLS y permisos.
+Configura `backend/.env` usando `backend/.env.example` como referencia. La conexión privada `DATABASE_URL` y `JWT_SECRET` se utilizan únicamente en el backend.
 
-## Seguridad del prototipo
+En una terminal:
 
-- El archivo `01_schema.sql` activa RLS en 11 tablas y quita acceso `anon`/`authenticated` a tablas y vistas del proyecto. Se utiliza la conexión PostgreSQL privada **solo desde Node**. Supabase Auth **no está integrado**: la gestión de usuarios y roles del MVP se realiza en Express.
-- No pongas `DATABASE_URL` ni `JWT_SECRET` en React ni en Git. **No uses la API publishable/anon key como conexión de Node**.
-- Las credenciales y el password DEMO (`Demo2026!`) son solo para pruebas LOCALES. Cambiar antes de publicar la app.
-- Como la conexión privada de Postgres tiene elevados privilegios, jamás debe exponerse al navegador. Para un despliegue público se requiere revisar TLS, claves, cuentas, respaldos, validaciones y límites de peticiones.
+```powershell
+cd backend
+npm ci
+npm run dev
+```
 
-## Funciones incluidas
+En otra terminal:
 
-1. Ingreso por usuario (Administrador, Vendedor, Bodega, Jefatura, Cliente).
-2. Venta presencial: valida stock disponible, descuenta físico, crea movimiento.
-3. Pedido online para retiro: reserva unidades; al entregar, se libera reserva y descuenta físico; si se cancela, se libera.
-4. Gestión de inventario: consultas, ajustes justificados.
-5. Reposición: bodega solicita, jefatura aprueba/rechaza, bodega recibe.
-6. Panel de indicadores operativos y vistas SQL para Power BI.
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
 
-Se entregan 120 ventas y 20 productos **FICTICIOS** en datos de ejemplo; los números de los mockups no tienen que coincidir con los de este prototipo.
+La tienda abre en http://localhost:5173 y la API en http://localhost:4000. Vite reenvía las solicitudes `/api` al backend.
 
+<<<<<<< HEAD
 
 - `powerbi/medidas_dax.txt`: propuesta de fórmulas DAX.
 - `PLAN_ENTREGABLE_3.md`: planificación y evidencias para la entrega final.
+=======
+## Inicializar una base nueva
 
-El proyecto no procesa pagos reales, no emite documentos tributarios y no gestiona despacho nacional.
+Ejecutar en el SQL Editor de Supabase, en este orden:
+
+1. `database/01_schema.sql`: tablas, restricciones, vistas y permisos.
+2. `database/02_demo.sql`: catálogo y datos iniciales ficticios, una sola vez.
+3. `database/05_paginacion.sql`: índices para filtros y paginación.
+4. `database/06_entrega_pedidos.sql`: opciones de entrega y estados de despacho.
+5. `database/07_entrega_sin_datos.sql`: permite elegir domicilio sin pedir dirección.
+
+Para crear las cuentas iniciales, ejecutar `npm run seed:users` desde `backend/`. La base actualmente utilizada ya está inicializada.
+
+## Funcionamiento
+
+El catálogo es público y permite armar el carrito antes de ingresar. El registro crea siempre una cuenta Cliente. Solo Administrador puede cambiar roles, crear usuarios internos o desactivar cuentas.
+>>>>>>> e29a546 (Actualizar tienda, perfiles, pedidos y despliegue)
+
+Los pedidos online permiten elegir retiro en sucursal o retiro a domicilio. Por ahora solo se guarda la opción, sin solicitar dirección ni datos adicionales. Los productos se reservan al confirmar; el stock físico se descuenta al entregar un retiro o al despachar un pedido a domicilio. La confirmación final de domicilio no repite el descuento.
+
+Vendedor registra ventas presenciales y entregas. Bodega gestiona existencias, preparación de pedidos y recepción de reposiciones. Jefatura consulta indicadores y aprueba o rechaza reposiciones. Cada perfil tiene su propia vista y color.
+
+Los listados se consultan en Supabase de 10 registros por página. Los filtros y el orden se aplican en el servidor; la búsqueda espera 400 ms sin escribir y cancela solicitudes anteriores. Las respuestas de listados tienen la forma `{items, total, page, pageSize, totalPages, summary}`.
+
+Las imágenes WebP están en `frontend/public/images/products/`. Las herramientas para descargarlas y optimizarlas están en `frontend/scripts/`; sus instrucciones están en [frontend/public/images/README.md](frontend/public/images/README.md).
+
+El sistema no procesa pagos reales, no emite documentos tributarios y no integra transportistas ni tarifas de envío.
+
+## Producción
+
+Railway compila el frontend y sirve la tienda y la API en un único servicio. Las credenciales y el certificado de Supabase se configuran como variables del servicio. El despliegue no ejecuta semillas ni migraciones automáticamente.

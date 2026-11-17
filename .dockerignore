@@ -1,0 +1,13 @@
+.git
+.venv*
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/certs
+evidencias
+frontend/scripts
+backend/scripts
+**/*.test.js
+**/__pycache__
+*.log

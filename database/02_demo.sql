@@ -52,9 +52,10 @@ SELECT s.id,(SELECT p.id FROM producto p WHERE p.proveedor_id=s.proveedor_id ORD
 FROM solicitud_reposicion s WHERE s.id BETWEEN 1 AND 10;
 
 -- 120 ventas + detalles + movimientos ficticios. La tabla venta cumple el mínimo de 100 registros.
-INSERT INTO venta(referencia,usuario_id,canal,estado,total,creado_en)
+INSERT INTO venta(referencia,usuario_id,canal,tipo_entrega,estado,total,creado_en)
 SELECT 'DEMO-'||LPAD(g::text,4,'0'),NULL,
  CASE WHEN g%3=0 THEN 'ONLINE' ELSE 'PRESENCIAL' END,
+ CASE WHEN g%3=0 THEN 'RETIRO_SUCURSAL' ELSE NULL END,
  CASE WHEN g%3=0 THEN 'ENTREGADA' ELSE 'CONFIRMADA' END,
  p.precio, NOW()-(g||' hours')::interval
 FROM generate_series(1,120) g

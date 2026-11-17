@@ -11,3 +11,10 @@ node_modules/
 
 # Archivos generados
 dist/
+# Entornos y archivos temporales de Python
+.venv*/
+__pycache__/
+*.pyc
+
+# Registros locales de ejecución
+*.log

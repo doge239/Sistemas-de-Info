@@ -1,0 +1,10 @@
+.git/
+.venv*/
+**/node_modules/
+**/dist/
+**/.env
+**/.env.*
+**/certs/
+evidencias/
+**/__pycache__/
+*.log

@@ -44,13 +44,21 @@ CREATE TABLE IF NOT EXISTS inventario (
 CREATE TABLE IF NOT EXISTS venta (
   id BIGSERIAL PRIMARY KEY,
   referencia VARCHAR(32) UNIQUE,
+  tipo_entrega VARCHAR(20),
+  datos_entrega JSONB,
   usuario_id BIGINT REFERENCES usuario(id),
   canal VARCHAR(15) NOT NULL CHECK(canal IN ('PRESENCIAL','ONLINE')),
-  estado VARCHAR(15) NOT NULL CHECK(estado IN ('CONFIRMADA','PENDIENTE','PREPARANDO','LISTO','ENTREGADA','CANCELADA')),
+  estado VARCHAR(15) NOT NULL CHECK(estado IN ('CONFIRMADA','PENDIENTE','PREPARANDO','LISTO','EN_DESPACHO','ENTREGADA','CANCELADA')),
   metodo_pago VARCHAR(20) CHECK(metodo_pago IS NULL OR metodo_pago IN ('EFECTIVO','TARJETA','TRANSFERENCIA','OTRO')),
   total INTEGER NOT NULL DEFAULT 0 CHECK(total >= 0),
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT venta_entrega_valida CHECK((
+    (canal='PRESENCIAL' AND tipo_entrega IS NULL AND datos_entrega IS NULL) OR
+    (canal='ONLINE' AND tipo_entrega='RETIRO_SUCURSAL' AND datos_entrega IS NULL) OR
+    (canal='ONLINE' AND tipo_entrega='DOMICILIO' AND (datos_entrega IS NULL OR (jsonb_typeof(datos_entrega)='object' AND
+      datos_entrega ?& ARRAY['destinatario','telefono','direccion','comuna','region'])))
+  ) IS TRUE)
 );
 CREATE TABLE IF NOT EXISTS detalle_venta (
   id BIGSERIAL PRIMARY KEY,
@@ -64,7 +72,7 @@ CREATE TABLE IF NOT EXISTS movimiento_inventario (
   producto_id BIGINT NOT NULL REFERENCES producto(id),
   usuario_id BIGINT REFERENCES usuario(id),
   venta_id BIGINT REFERENCES venta(id),
-  tipo VARCHAR(30) NOT NULL CHECK(tipo IN ('SALIDA_VENTA','RESERVA','LIBERACION_RESERVA','SALIDA_RETIRO','RECEPCION','AJUSTE_POSITIVO','AJUSTE_NEGATIVO')),
+  tipo VARCHAR(30) NOT NULL CHECK(tipo IN ('SALIDA_VENTA','RESERVA','LIBERACION_RESERVA','SALIDA_RETIRO','SALIDA_ENVIO','RECEPCION','AJUSTE_POSITIVO','AJUSTE_NEGATIVO')),
   cantidad INTEGER NOT NULL CHECK(cantidad > 0),
   motivo TEXT,
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
